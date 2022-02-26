@@ -17957,23 +17957,34 @@ var Api = /*#__PURE__*/function () {
      * Submit a payment request
      */
     value: function paymentRequest(data) {
+      var apiUrl = _.get(sjs.config, 'apiUrl', 'https://api.strike.me/v1');
+
+      var apiKey = _.get(sjs.config, 'apiKey', null);
+
       return new Promise(function (resolve, reject) {
         var payload = {
           method: 'post',
           headers: {
             Accept: 'application/json',
-            'Content-Type': 'application/json;; charset=utf-8'
+            'Content-Type': 'application/json;; charset=utf-8',
+            'Authorization': "Bearer ".concat(apiKey)
           },
           body: JSON.stringify(data)
         };
-
-        var apiUrl = _.get(sjs.config, 'apiUrl', 'https://api.zaphq.io/api/v0.4');
-
-        window.fetch("".concat(apiUrl, "/public/users/").concat(sjs.config.userName, "/pay"), payload).then(Api.checkStatus).then(function (response) {
-          response.json().then(function (content) {
+        window.fetch("".concat(apiUrl, "/invoices"), payload).then(Api.checkStatus).then(function (response) {
+          return response.json().then(function (content) {
             Util.logDebug('Api.paymentRequest res:', content);
-            resolve({
-              paymentConfig: content
+            return content;
+          });
+        }).then(function (invoice) {
+          Util.logDebug('Api.paymentRequest res: invoice generated', invoice.invoiceId);
+          window.fetch("".concat(apiUrl, "/invoices/").concat(invoice.invoiceId, "/quote"), payload).then(Api.checkStatus).then(function (response) {
+            response.json().then(function (content) {
+              content.invoiceId = invoice.invoiceId;
+              Util.logDebug('Api.paymentRequest res: guote generated', content);
+              resolve({
+                paymentConfig: content
+              });
             });
           });
         })["catch"](function (err) {
@@ -17988,32 +17999,51 @@ var Api = /*#__PURE__*/function () {
 
   }, {
     key: "paymentStatus",
-    value: function paymentStatus(quoteId) {
-      Util.logDebug("Api.paymentStatus: checking status for quoteId : ".concat(quoteId));
+    value: function paymentStatus(invoiceId, expiration) {
+      Util.logDebug("Api.paymentStatus: checking status for invoice : ".concat(invoiceId));
+
+      var apiUrl = _.get(sjs.config, 'apiUrl', 'https://api.strike.me/v1');
+
+      var apiKey = _.get(sjs.config, 'apiKey', null);
+
+      var payload = {
+        method: 'get',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json;; charset=utf-8',
+          'Authorization': "Bearer ".concat(apiKey)
+        }
+      };
       var interval = setInterval(function () {
         var promise = new Promise(function (resolve, reject) {
-          var apiUrl = _.get(sjs.config, 'apiUrl', 'https://api.zaphq.io/api/v0.4');
-
-          window.fetch("".concat(apiUrl, "/public/receive/").concat(quoteId)).then(Api.checkStatus).then(function (response) {
+          window.fetch("".concat(apiUrl, "/invoices/").concat(invoiceId), payload).then(Api.checkStatus).then(function (response) {
             return response.json().then(function (payment) {
               Util.logDebug('Api.paymentRequest res:', payment);
               $("#strikeInvoice").html(payment.expirySecond);
 
-              if (_.includes(['PAID', 'EXPIRED'], payment.result)) {
-                if (payment.result === 'EXPIRED') {
-                  $("#paymentRequestRefresh").show(); // Add class to QrSlider for bluring the request and freeze
-
-                  $("#QrSlider").addClass('qrCodeExpired'); // Add overlay message of expiration
-
-                  $("#QrCodeLoader").html('Expired');
+              if (_.includes(['PAID', 'UNPAID'], payment.state)) {
+                if (payment.state === 'PAID' && _.get(sjs.config, 'redirectUrl', false)) {
+                  Dom.navigateTo(sjs.config.redirectUrl);
+                  clearInterval(interval);
+                  resolve(payment);
                 }
 
-                $("#paymentInfo, #paymentRequestInvoiceCopy").hide();
-                clearInterval(interval);
-                resolve(payment);
+                if (payment.state === 'UNPAID') {
+                  // Check if the quote is expired or no
+                  var currenTime = new Date();
+                  var timeleft = (new Date(expiration).getTime() - currenTime.getTime()) / 1000;
 
-                if (payment.result === 'PAID' && _.get(sjs.config, 'redirectUrl', false)) {
-                  Dom.navigateTo(sjs.config.redirectUrl);
+                  if (timeleft < 1) {
+                    // Mark as expired
+                    $("#paymentRequestRefresh").show(); // Add class to QrSlider for bluring the request and freeze
+
+                    $("#QrSlider").addClass('qrCodeExpired'); // Add overlay message of expiration
+
+                    $("#QrCodeLoader").html('Expired');
+                    $("#paymentInfo, #paymentRequestInvoiceCopy").hide();
+                    clearInterval(interval);
+                    resolve(payment);
+                  }
                 }
               }
             });
@@ -18058,6 +18088,7 @@ function payment_createClass(Constructor, protoProps, staticProps) { if (protoPr
 
 
 
+
 var Payment = /*#__PURE__*/function () {
   function Payment() {
     payment_classCallCheck(this, Payment);
@@ -18097,19 +18128,22 @@ var Payment = /*#__PURE__*/function () {
         // First we disable the inputs
         Util.disableInputs();
         console.log("processing the payment request and show the QR code");
+        var expiration = Date.now();
         var payParams = {
           amount: {
             'amount': Dom.getElementValue(sjs.fields['amount']),
-            'currency': 'USD'
+            'currency': sjs.config.currency
           },
-          description: "Strike-JS : Payment Request"
+          description: "Strike-JS : Payment Request",
+          handle: sjs.config.userName
         };
         api.paymentRequest(payParams).then(function (res) {
           Util.logDebug('payment: pay request success, generating QRCode:', res);
+          expiration = lodash_default().get(res.paymentConfig, 'expiration', '');
           return Dom.generateQrCode(res.paymentConfig);
-        }).then(function (quoteId) {
-          Util.logDebug("payment: QrCode generation success, quoteId : ".concat(quoteId, " awaiting payment status."));
-          return api.paymentStatus(quoteId);
+        }).then(function (invoiceId) {
+          Util.logDebug("payment: QrCode generation success for invoice : ".concat(invoiceId, " awaiting payment status."));
+          return api.paymentStatus(invoiceId, expiration);
         }).then(function (res) {
           resolve(res);
         })["catch"](function (err) {
@@ -18220,16 +18254,16 @@ var Dom = /*#__PURE__*/function () {
         });
 
         var lnQrcode = new QRCode(document.getElementById("lnQrcode"), lnOptions);
-        $("#lnQrcodeAmount").text('$' + params.price['amount']);
+        $("#lnQrcodeAmount").text('$' + params.targetAmount['amount']);
       }
 
       if (params.onchainAddress) {
         var btcOptions = lodash_default().assign(QRCodeOptions, {
-          text: "bitcoin:".concat(params.onchainAddress, "?amount=").concat(params.size['amount'])
+          text: "bitcoin:".concat(params.onchainAddress, "?amount=").concat(params.sourceAmount['amount'])
         });
 
         var btcQrcode = new QRCode(document.getElementById("onChainQrcode"), btcOptions);
-        $("#onChainQrcodeAmount").text(params.size['amount'] + ' BTC');
+        $("#onChainQrcodeAmount").text(params.sourceAmount['amount'] + ' BTC');
         $('.QrCodesSlider').unslider({
           keys: true,
           dots: true,
@@ -18266,14 +18300,14 @@ var Dom = /*#__PURE__*/function () {
       // #TODO : Move to custom function
 
       $(document).on("click", '#paymentRequestRefresh', function () {
-        $("#lnQrcode, #onChainQrcode, .unslider-nav, #QrCodeLoader").html('');
-        lnQrcode.clear();
-        btcQrcode.clear();
+        $("#lnQrcode, #onChainQrcode, .unslider-nav, #QrCodeLoader").html(''); // lnQrcode.clear();
+        // btcQrcode.clear();
+
         $("#QrSlider").removeClass('qrCodeExpired');
         $("#paymentRequestRefresh").hide();
         payment.process();
       });
-      return params.quoteId;
+      return params.invoiceId;
     }
     /**
      * Redirect the user to requested page
@@ -18459,7 +18493,7 @@ var Config = /*#__PURE__*/function () {
           return reject('No configuration found!');
         }
 
-        Util.logDebug("strikeJS version ".concat("20210402131151", " SJS href ").concat(window.location.href)); // Check if the required fields are there
+        Util.logDebug("strikeJS version ".concat("20220226090246", " SJS href ").concat(window.location.href)); // Check if the required fields are there
 
         var requiredKeys = ['userName'];
 
@@ -18601,7 +18635,7 @@ var Bootstrap = /*#__PURE__*/function () {
       return {
         name: "strike.js",
         version: "0.0.1",
-        build: "20210402131151"
+        build: "20220226090246"
       };
     }
   }]);
