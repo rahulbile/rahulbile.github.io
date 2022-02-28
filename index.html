@@ -4,39 +4,25 @@
   body {background: linear-gradient(to bottom, rgba(60,154,212,1) 0%, rgba(0,24,51,1) 78%, rgba(0,24,51,1) 100%);}
 </style>
 <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-<script src="strike.js"></script>
+<script src="strike.min.js"></script>
 DEMO OF STRIKE JS
-<div id="QrCodeLoader" class="overlay"></div>
-<div id="QrSlider" class="qrCode QrCodesSlider">
-  <ul>
-    <li>
-      <span id="lnQrcodeAmount"></span>
-      <span id="lnQrcode"></span>
-    </li>
-    <li>
-      <span id="onChainQrcodeAmount"></span>
-      <span id="onChainQrcode"></span>
-    </li>
-  </ul>
-</div>
-<input id="amountBox" autocomplete="off" data-strikejs="amount" type="number" font-size="70" inputmode="decimal" name="amount" placeholder="0.00" placeholdercolor="#3B3B3B" min="0.1" max="5" value="">
+
+<div id="strikeInvoiceCard" class="strike-invoice-card">
+<input value="5" id="amountBox" required autocomplete="off" data-strikejs="amount" type="number" font-size="70" inputmode="decimal" name="amount" placeholder="0.00" placeholdercolor="#3B3B3B" min="0.1" max="5" value="">
 <input id="submitButton" type="submit" value="Donate">
-<div id="paymentInfo">Expires in <span id="strikeInvoice"></span> seconds</div>
-<div class="strike-btn" id="paymentRequestRefresh">Refresh</div>
-<div class="strike-btn" id="paymentRequestInvoiceCopy" data-clipboard-text="">Copy</div>
+</div>
+
 <script>
   $(window).on('load', function() {
-      strikeJS.init({
-        'debug': true,
-        'userName': 'rahulbile',
-        'currency': 'USDT',
-        'redirectUrl': 'https://global.strike.me/',
-        'submitButton': '#submitButton',
-        'theme': 'default',
-        'apiUrl': 'https://api.next.strike.me/v1',
-        'apiKey': '21C8EC2577022BFE31AE8DABC488E72AF05E07C359C254477FE1D7389F840CED'
-      });
-
+    strikeJS.init({
+      'debug': true,
+      'element': '#strikeInvoiceCard',
+      'currency': 'USDT',
+      'redirectUrl': 'https://global.strike.me/',
+      'submitButton': '#submitButton',
+      'apiUrl': 'https://api.next.strike.me/v1',
+      'apiKey': '21C8EC2577022BFE31AE8DABC488E72AF05E07C359C254477FE1D7389F840CED'
+    });
 });
 </script>
 </body>
